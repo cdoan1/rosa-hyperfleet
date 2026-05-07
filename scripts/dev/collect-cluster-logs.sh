@@ -5,7 +5,7 @@
 # the local dev CLI (ephemeral-env.sh) and CI (ci/e2e-tests.sh).
 #
 # Callers set CLUSTER_PREFIX to control cluster name resolution:
-#   - Ephemeral: CLUSTER_PREFIX="ci-a1b2c3-" → ci-a1b2c3-regional, ci-a1b2c3-mc01
+#   - Ephemeral: CLUSTER_PREFIX="eph-a1b2c3-" → eph-a1b2c3-regional, eph-a1b2c3-mc01
 #   - Integration: CLUSTER_PREFIX="" → regional, mc01
 #
 # MC clusters are discovered dynamically by listing ECS clusters matching
@@ -15,7 +15,7 @@
 #   collect-cluster-logs.sh [regional|management|all]
 #
 # Required environment variables:
-#   CLUSTER_PREFIX  — Cluster name prefix (e.g. "ci-a1b2c3-" or "" for bare names)
+#   CLUSTER_PREFIX  — Cluster name prefix (e.g. "eph-a1b2c3-" or "" for bare names)
 #
 # Credentials (one of the following):
 #   REGIONAL_AK / REGIONAL_SK   — Direct credential env vars (dev workflow)
@@ -38,10 +38,8 @@ set -uo pipefail
 
 CREDS_DIR="${CREDS_DIR:-/var/run/rosa-credentials}"
 
-RC_NAMESPACES="ns/argocd ns/maestro-server ns/platform-api ns/hyperfleet-system ns/monitoring"
-MC_NAMESPACES="ns/argocd ns/hypershift ns/maestro-agent ns/monitoring ns/cert-manager"
-# Hosted cluster control plane namespaces (discovered dynamically)
-MC_HC_NAMESPACE_PATTERN="ns/clusters-*"
+RC_NAMESPACES="all"
+MC_NAMESPACES="all"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -128,7 +126,7 @@ ensure_logs_bucket() {
 }
 
 # Discover MC cluster IDs by listing ECS clusters matching ${prefix}mc*-bastion.
-# Outputs one cluster_id per line (e.g. "ci-a1b2c3-mc01", "mc01").
+# Outputs one cluster_id per line (e.g. "eph-a1b2c3-mc01", "mc01").
 discover_mc_clusters() {
     local prefix="$1"
     aws ecs list-clusters --query 'clusterArns[*]' --output text 2>/dev/null \
@@ -147,7 +145,6 @@ collect_logs_for_cluster() {
     local cluster_id="$1"
     local namespaces="$2"
     local out_dir="$3"
-    local include_hc_namespaces="${4:-false}"  # New parameter for MC clusters
 
     echo "==> Collecting logs from ${cluster_id}..."
 
@@ -161,12 +158,6 @@ collect_logs_for_cluster() {
 
     ensure_logs_bucket "$account_id" "$region"
     local s3_key="collect-logs-$(date +%s%N)-$$-${RANDOM}.tar.gz"
-
-    # For management clusters, append hosted cluster namespace pattern
-    if [[ "$include_hc_namespaces" == "true" ]]; then
-        namespaces="${namespaces} ${MC_HC_NAMESPACE_PATTERN}"
-        echo "  Including hosted cluster namespaces: ${MC_HC_NAMESPACE_PATTERN}"
-    fi
 
     # Discover network config from the bastion security group
     local sg_id subnets vpc_id
@@ -345,7 +336,7 @@ if [[ "$CLUSTER_SCOPE" == "all" || "$CLUSTER_SCOPE" == "management" ]]; then
         else
             while IFS= read -r mc_id; do
                 mc_name="${mc_id#"$PREFIX"}"
-                collect_logs_for_cluster "$mc_id" "$MC_NAMESPACES" "${OUTPUT_DIR}/${mc_name}" "true" || failed=1
+                collect_logs_for_cluster "$mc_id" "$MC_NAMESPACES" "${OUTPUT_DIR}/${mc_name}" || failed=1
             done <<< "$mc_clusters"
         fi
     else
