@@ -253,6 +253,56 @@ No AlertManager changes required. No bridge changes required. The PagerDuty rout
 - **SNS publish fails**: Bridge should retry with backoff and log failures. Consider a local buffer or DLQ within the bridge for extreme cases.
 - **Subscriber is down**: Out of scope. Once an alert is published to the SNS topic, delivery to subscribers is the responsibility of SNS and the subscriber. The platform's obligation ends at successful SNS publish.
 
+## Cross-Cluster Alert Evaluation via Thanos Ruler
+
+### Problem
+
+RC Prometheus only sees its own local TSDB. Metrics from Management Clusters are ingested by Thanos Receive via `remote_write` and are only queryable through Thanos Query. This means RC Prometheus cannot evaluate alerting rules that reference MC metrics — such as HCP availability SLAs derived from HostedCluster status conditions.
+
+### Solution
+
+Thanos Ruler evaluates all PrometheusRule CRs on the cluster against Thanos Query (which has both RC and MC metrics) and sends firing alerts to the RC AlertManager. This makes Thanos Ruler the single evaluation point for all rules, eliminating the risk of duplicate evaluation between RC Prometheus and Thanos Ruler.
+
+To avoid duplicates, the kube-prometheus-stack `defaultRules.create` is set to `false` on the RC. The defaults are audited and re-added as explicit PrometheusRule CRs under ROSAENG-1159.
+
+```mermaid
+flowchart LR
+    MC1[MC Prometheus] -->|remote_write| TR[Thanos Receive]
+    MC2[MC Prometheus] -->|remote_write| TR
+    TR --> TQ[Thanos Query]
+    TS[Thanos Store / S3] --> TQ
+    TRuler[Thanos Ruler] -->|queries| TQ
+    TRuler -->|fires alerts| AM[AlertManager]
+    AM -->|severity=critical| PD[PagerDuty]
+    AM -->|continue| B[Webhook Bridge]
+```
+
+### Rule Deployment
+
+Platform alerting rules are deployed as PrometheusRule CRs via the `alerting-rules` Helm chart (`argocd/config/regional-cluster/alerting-rules/`). The thanos-operator's `prometheus-rule` feature gate enables PrometheusRule CR support, but discovery requires specific labels: `app.kubernetes.io/name: alerting-rules` (matched by the ThanosRuler `ruleConfigSelector`) and `operator.thanos.io/prometheus-rule: "true"` (the operator's default label, always merged into the selector). Both must be present on any PrometheusRule CR deployed via the `alerting-rules` chart.
+
+See [Adding Alerting Rules](../adding-alerting-rules.md) for a developer guide on creating new rules.
+
+### Error Budget Burn Rate Pattern
+
+SLA alerts use multi-window, multi-burn-rate alerting (from the Google SRE workbook) instead of simple threshold alerts. A threshold on a 30-day average only fires after the budget is already exhausted. Burn rate alerts detect unsustainable consumption while budget remains:
+
+| Alert | Burn rate | Long window | Short window | `for` | Detection time |
+| ----- | --------- | ----------- | ------------ | ----- | -------------- |
+| Fast  | 14.4x     | 5m          | 2m           | 1m    | ~6 minutes     |
+| Slow  | 6x        | 30m         | 5m           | 2m    | ~32 minutes    |
+
+The long window detects sustained problems; the short window confirms the issue is still active (preventing false positives from brief historical blips). Both windows must exceed the threshold for the alert to fire.
+
+For a 99.95% SLA target, the error budget is 0.05%. The threshold formula: `error_rate > burn_rate_factor * (1 - sla_target)`.
+
+### Current Alerts
+
+| Alert                                | Source metric                                                                  | SLA target | Severity |
+| ------------------------------------ | ------------------------------------------------------------------------------ | ---------- | -------- |
+| `HCPAvailabilityErrorBudgetFastBurn` | `kube_customresource_hostedcluster_status_condition` (HostedCluster Available) | 99.95%     | critical |
+| `HCPAvailabilityErrorBudgetSlowBurn` | `kube_customresource_hostedcluster_status_condition` (HostedCluster Available) | 99.95%     | critical |
+
 ## Open Questions
 
 - [ ] What alert labels should be mapped to SNS message attributes? (SNS supports up to 10 attributes per message.)

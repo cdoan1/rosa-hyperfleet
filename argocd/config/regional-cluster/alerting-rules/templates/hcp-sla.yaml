@@ -1,0 +1,65 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hcp-sla
+  namespace: thanos
+  labels:
+    app.kubernetes.io/name: alerting-rules
+    app.kubernetes.io/managed-by: Helm
+    operator.thanos.io/prometheus-rule: "true"
+spec:
+  groups:
+    - name: hcp-availability-recording
+      interval: 1m
+      rules:
+        # 1 when the HostedCluster Available condition is True, 0 otherwise.
+        # max handles deduplication across Prometheus HA replicas.
+        - record: hcp:hostedcluster_available
+          expr: |
+            max by (namespace, name, cluster) (
+              kube_customresource_hostedcluster_status_condition{
+                type="KubeAPIServerAvailable",
+                status="True",
+                cluster_type="management-cluster"
+              }
+            )
+
+    - name: hcp-availability-alerts
+      rules:
+        # Fast burn: detects severe outages within ~6 minutes.
+        # Long window (5m) detects the problem; short window (2m)
+        # confirms the issue is still active.
+        - alert: HCPAvailabilityErrorBudgetFastBurn
+          expr: |
+            (1 - avg_over_time(hcp:hostedcluster_available[5m])) > (14.4 * (1 - {{ .Values.sla.target }}))
+            and
+            (1 - avg_over_time(hcp:hostedcluster_available[2m])) > (14.4 * (1 - {{ .Values.sla.target }}))
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: HCP availability error budget burning fast
+            description: >-
+              HostedCluster {{ "{{" }} $labels.name {{ "}}" }} in namespace
+              {{ "{{" }} $labels.namespace {{ "}}" }} on cluster
+              {{ "{{" }} $labels.cluster {{ "}}" }} is consuming its 30-day
+              availability error budget at 14.4x the sustainable rate.
+
+        # Slow burn: detects partial degradation within ~32 minutes.
+        # Long window (30m) detects the problem; short window (5m)
+        # confirms the issue is still active.
+        - alert: HCPAvailabilityErrorBudgetSlowBurn
+          expr: |
+            (1 - avg_over_time(hcp:hostedcluster_available[30m])) > (6 * (1 - {{ .Values.sla.target }}))
+            and
+            (1 - avg_over_time(hcp:hostedcluster_available[5m])) > (6 * (1 - {{ .Values.sla.target }}))
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: HCP availability error budget burning steadily
+            description: >-
+              HostedCluster {{ "{{" }} $labels.name {{ "}}" }} in namespace
+              {{ "{{" }} $labels.namespace {{ "}}" }} on cluster
+              {{ "{{" }} $labels.cluster {{ "}}" }} is consuming its 30-day
+              availability error budget at 6x the sustainable rate.
