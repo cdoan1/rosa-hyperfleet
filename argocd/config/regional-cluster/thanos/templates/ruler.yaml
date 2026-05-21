@@ -17,12 +17,15 @@ spec:
     matchLabels:
       app.kubernetes.io/name: alerting-rules
   alertmanagerURL: {{ .Values.ruler.alertmanagerURL | quote }}
+  alertLabelDrop:
+    - rule_replica
   objectStorageConfig:
     name: {{ .Values.objectStore.secretName }}
     key: objstore.yml
   evaluationInterval: {{ .Values.ruler.evaluationInterval | default "1m" }}
   retention: {{ .Values.ruler.retention | default "48h" }}
   externalLabels:
+    rule_replica: "$(NAME)"
     region: {{ .Values.global.aws_region | quote }}
   resourceRequirements:
     requests:
