@@ -123,12 +123,22 @@ class _StrictChainableUndefined(ChainableUndefined):
         return False
 
 
-def _tojson_strict(value: Any, indent: int | None = None) -> str:
+def _check_no_undefined(value: Any) -> None:
     if isinstance(value, Undefined):
         raise ValueError(
             f"undefined variable passed to tojson: {value._undefined_name!r}"
             f" — ensure it's defined in config/defaults.yaml"
         )
+    if isinstance(value, dict):
+        for v in value.values():
+            _check_no_undefined(v)
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            _check_no_undefined(item)
+
+
+def _tojson_strict(value: Any, indent: int | None = None) -> str:
+    _check_no_undefined(value)
     return json.dumps(value, sort_keys=True, indent=indent)
 
 
