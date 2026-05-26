@@ -40,7 +40,8 @@ resource "aws_kms_key" "sns_alerts" {
         }
         Action = [
           "kms:Decrypt",
-          "kms:GenerateDataKey*"
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyWithoutPlaintext"
         ]
         Resource = "*"
         Condition = {
@@ -148,7 +149,8 @@ resource "aws_iam_role_policy" "alertmanager_sns" {
         Effect = "Allow"
         Action = [
           "kms:Decrypt",
-          "kms:GenerateDataKey"
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyWithoutPlaintext"
         ]
         Resource = [
           aws_kms_key.sns_alerts.arn
