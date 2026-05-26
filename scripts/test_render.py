@@ -69,6 +69,7 @@ def _create_config_structure(
         },
         "dns": {
             "domain": "",
+            "create_environment_zone": False,
         },
         "terraform_tags": {
             "app_code": "infra",
@@ -82,6 +83,19 @@ def _create_config_structure(
         "management_cluster_defaults": {
             "enable_bastion": False,
             "node_instance_types": ["t3.medium", "t3a.medium"],
+        },
+        "observability": {
+            "pagerduty": {
+                "enabled": False,
+                "escalation_policy_id": "",
+            },
+        },
+        "applications": {
+            "regional-cluster": {
+                "maestro": {
+                    "iotLogLevel": "WARN",
+                },
+            },
         },
     }
 
