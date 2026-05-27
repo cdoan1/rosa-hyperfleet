@@ -13,6 +13,23 @@ kube-prometheus-stack:
 
   alertmanager:
     enabled: true
+    config:
+      route:
+        # Default receiver drops alerts not matched by any route.
+        # All real delivery happens via explicit routes with continue: true,
+        # so alerts flow through every matching receiver (SNS, PagerDuty, etc.).
+        receiver: "null"
+        routes:
+          - receiver: sns-alerts
+            continue: true
+      receivers:
+        - name: "null"
+        - name: sns-alerts
+          sns_configs:
+            - topic_arn: 'arn:aws:sns:{{ .Values.global.aws_region }}:{{ .Values.global.aws_account_id }}:{{ .Values.global.cluster_name }}-alerts'
+              sigv4:
+                region: '{{ .Values.global.aws_region }}'
+              send_resolved: true
     alertmanagerSpec:
       replicas: 2
       resources:
