@@ -5,6 +5,10 @@
 # Environment: integration
 # Region: us-east-1
 
+eksNodePool:
+  instanceFamilies:
+  - m8i
+  - m7i
 hypershift:
   oidcStorageS3Bucket:
     name: hypershift-mc-us-east-1
