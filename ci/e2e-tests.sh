@@ -80,19 +80,15 @@ if [[ -z "${E2E_ACCOUNT_ID:-}" ]]; then
 fi 
 
 # --- HCP Creation E2E Tests ---
-# Customer credentials come from the rrp-customer AWS profile.
+# Customer credentials are supplied via the rrp-customer AWS profile (CUSTOMER_AWS_PROFILE).
+# Subprocesses use credential_process auto-refresh, avoiding the 15-minute STS TTL cliff.
 # Only run if the platform API tests passed.
 _have_customer_creds=false
 if [[ $rc -ne 0 ]]; then
   echo "Skipping HCP creation tests — platform API tests failed (exit code: $rc)"
 elif aws configure export-credentials --profile rrp-customer --format process &>/dev/null; then
-  _cust_creds=$(aws configure export-credentials --profile rrp-customer --format process)
-  export CUSTOMER_AWS_ACCESS_KEY_ID=$(echo "$_cust_creds" | jq -r '.AccessKeyId')
-  export CUSTOMER_AWS_SECRET_ACCESS_KEY=$(echo "$_cust_creds" | jq -r '.SecretAccessKey')
-  _cust_st=$(echo "$_cust_creds" | jq -r '.SessionToken // empty')
-  [[ -n "$_cust_st" ]] && export CUSTOMER_AWS_SESSION_TOKEN="$_cust_st"
-  unset _cust_creds _cust_st
-  echo "Customer credentials loaded from rrp-customer profile"
+  export CUSTOMER_AWS_PROFILE="rrp-customer"
+  echo "Customer profile rrp-customer is available"
 
   if [[ -z "${E2E_CUSTOMER_ACCOUNT_ID:-}" ]]; then
     export E2E_CUSTOMER_ACCOUNT_ID="$(aws sts get-caller-identity --profile rrp-customer --query Account --output text)"
