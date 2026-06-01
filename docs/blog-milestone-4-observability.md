@@ -149,6 +149,10 @@ Standardized Grafana dashboards deployed to every region via Helm — covering E
 
 Leveraging the built-in HCP monitoring from the Control Plane Operator — part of the HyperShift Operator itself — to feed availability metrics into the SLA alerting pipeline. We'll revisit the need for external synthetic monitoring in the future.
 
+### End-to-End Testing
+
+End-to-end tests validate that all monitoring components are up and healthy, and that the recording rules we depend on are actually producing data. On top of that, every alerting rule ships with `promtool` unit tests — a pattern we intend to maintain as we continue adding alerts to the platform. We also plan to run these same end-to-end tests as pre-merge checks in upstream repos, like hypershift-operator, so upstream teams can catch observability regressions (or any other e2e failures) before they ship.
+
 ## What's Next
 
 The foundation is in place: every region has its own self-contained observability stack, built on RHOBS mid-stream components, with an alerting pipeline designed to grow with the platform. Adding a new alert consumer is an SNS subscription, not an architecture change.
