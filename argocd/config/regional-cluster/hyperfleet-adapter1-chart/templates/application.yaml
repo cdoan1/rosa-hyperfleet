@@ -30,6 +30,7 @@ spec:
             enabled: false
             url: "amqps://placeholder@localhost:5671/"
             queue: "clusters"
+            exchange: "hyperfleet"
 
         # Environment variables - BROKER_RABBITMQ_URL overrides broker.yaml config
         env:
