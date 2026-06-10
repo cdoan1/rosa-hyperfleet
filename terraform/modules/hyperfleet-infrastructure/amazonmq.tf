@@ -181,8 +181,10 @@ resource "aws_mq_broker" "hyperfleet" {
   publicly_accessible = false
 
   user {
-    username = var.mq_username
-    password = random_password.mq_password.result
+    username       = var.mq_username
+    password       = random_password.mq_password.result
+    groups         = ["administrator"]
+    console_access = true
   }
 
   encryption_options {
