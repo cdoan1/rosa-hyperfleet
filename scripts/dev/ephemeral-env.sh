@@ -752,10 +752,11 @@ cmd_bastion_port_forward() {
     local loki="loki          - Loki Query Frontend (platform logs)"
     local alertmanager="alertmanager  - AlertManager Web UI"
     local grafana="grafana       - Grafana Dashboard"
+    local rabbitmq="rabbitmq      - RabbitMQ Management Console (AWS MQ)"
     local custom="custom        - Custom service / ports"
 
     # custom services are added only for interactive
-    local regional_svc_list=("$maestro" "$argocd" "$prometheus" "$thanos" "$loki" "$alertmanager" "$grafana")
+    local regional_svc_list=("$maestro" "$argocd" "$prometheus" "$thanos" "$loki" "$alertmanager" "$grafana" "$rabbitmq")
     local management_svc_list=("$argocd" "$prometheus")
 
     local services
@@ -824,6 +825,9 @@ cmd_bastion_port_forward() {
             forwards+=(
             "Grafana 3000 3000 grafana grafana 80"
             )
+            ;;
+        rabbitmq)
+            # RabbitMQ is AWS MQ, not a k8s service - handled separately below
             ;;
         custom)
             local k8s_ns k8s_svc k8s_svc_port local_port remote_port
@@ -945,12 +949,54 @@ cmd_bastion_port_forward() {
         ssm_pids+=($!)
     done
 
+    # ── RabbitMQ (AWS MQ) forwarding ────────────────────────────────────────────
+    # AWS MQ is not in k8s, so we use SSM remote host forwarding directly
+
+    if [[ " $services " =~ " rabbitmq " ]]; then
+        echo ""
+        echo "==> Setting up RabbitMQ (AWS MQ) port forwarding..."
+
+        # Find the broker for this environment
+        local broker_endpoint
+        broker_endpoint=$(aws mq list-brokers --query "BrokerSummaries[?contains(BrokerName, '${BUILD_ID}')].BrokerHostInstanceType | [0]" --output text 2>/dev/null || true)
+
+        if [[ -z "$broker_endpoint" || "$broker_endpoint" == "None" ]]; then
+            # Try to get from any hyperfleet broker
+            local broker_list
+            broker_list=$(aws mq list-brokers --query "BrokerSummaries[?contains(BrokerName, 'hyperfleet')].{Name:BrokerName,Endpoint:BrokerInstances[0].Endpoint}" --output json)
+            broker_endpoint=$(echo "$broker_list" | jq -r '.[0].Endpoint // empty' | sed 's/:5671$//')
+        fi
+
+        if [[ -z "$broker_endpoint" ]]; then
+            echo "Warning: Could not find AWS MQ broker endpoint. Skipping RabbitMQ forwarding."
+        else
+            echo "    Broker: $broker_endpoint"
+            echo "==> [local] SSM remote forwarding RabbitMQ Management Console (localhost:8444 -> ${broker_endpoint}:443)..."
+
+            # Check if local port is free
+            if lsof -iTCP:8444 -sTCP:LISTEN -t &>/dev/null; then
+                echo "Error: Local port 8444 (RabbitMQ) is already in use."
+                echo "Kill the process using it first: lsof -iTCP:8444 -sTCP:LISTEN"
+            else
+                aws ssm start-session \
+                    --target "$target" \
+                    --document-name AWS-StartPortForwardingSessionToRemoteHost \
+                    --parameters "{\"host\":[\"${broker_endpoint}\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"8444\"]}" &
+                ssm_pids+=($!)
+            fi
+        fi
+    fi
+
     echo ""
     echo "==> Port forwarding active. Forwarded ports:"
     for entry in "${forwards[@]}"; do
         read -r label _ local_port _ _ _ <<< "$entry"
         echo "    ${label}: http://localhost:${local_port}"
     done
+
+    if [[ " $services " =~ " rabbitmq " ]] && [[ -n "${broker_endpoint:-}" ]]; then
+        echo "    RabbitMQ: https://localhost:8444"
+    fi
 
     # For ArgoCD, fetch and display the admin password from the bastion.
     # Use a marker prefix so we can extract the password from the SSM session noise.
@@ -972,6 +1018,33 @@ cmd_bastion_port_forward() {
         else
             echo "    Password:        (could not retrieve - run on bastion manually):"
             echo "                     kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath={.data.password} | base64 -d"
+        fi
+    fi
+
+    # For RabbitMQ, fetch and display the credentials from the bastion
+    if [[ " $services " =~ " rabbitmq " ]] && [[ -n "${broker_endpoint:-}" ]]; then
+        echo ""
+        echo "==> Fetching RabbitMQ credentials..."
+        rabbitmq_get_creds=$(aws ecs execute-command \
+            --cluster "$ecs_cluster" \
+            --task "$task_id" \
+            --container bastion \
+            --interactive \
+            --command "sh -c \"echo RABBITMQ_URL=\$(kubectl -n hyperfleet-system get secret hyperfleet-sentinel-broker-credentials -o jsonpath={.data.BROKER_RABBITMQ_URL} | base64 -d)\"" 2>/dev/null || true)
+        rabbitmq_url=$(echo "$rabbitmq_get_creds" | grep -o 'RABBITMQ_URL=.*' | cut -d= -f2 | tr -d '[:space:]')
+
+        if [[ -n "$rabbitmq_url" ]] && [[ "$rabbitmq_url" =~ amqps?://([^:]+):([^@]+)@ ]]; then
+            rabbitmq_user="${BASH_REMATCH[1]}"
+            rabbitmq_pass="${BASH_REMATCH[2]}"
+            echo ""
+            echo "    RabbitMQ UI:     https://localhost:8444"
+            echo "    Username:        ${rabbitmq_user}"
+            echo "    Password:        ${rabbitmq_pass}"
+        else
+            echo ""
+            echo "    RabbitMQ UI:     https://localhost:8444"
+            echo "    Credentials:     (could not retrieve - run on bastion manually):"
+            echo "                     kubectl -n hyperfleet-system get secret hyperfleet-sentinel-broker-credentials -o jsonpath={.data.BROKER_RABBITMQ_URL} | base64 -d"
         fi
     fi
 
