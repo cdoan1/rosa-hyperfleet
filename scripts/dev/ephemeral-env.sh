@@ -959,13 +959,17 @@ cmd_bastion_port_forward() {
         # Find the broker for this environment
         # Broker name format: eph-<BUILD_ID>-regional-hyperfleet
         local broker_name="${BUILD_ID}-regional-hyperfleet"
+        echo "    Looking for broker: ${broker_name}"
+
         local broker_id
         broker_id=$(aws mq list-brokers --query "BrokerSummaries[?BrokerName=='${broker_name}'].BrokerId | [0]" --output text 2>/dev/null || true)
+        echo "    Broker ID: ${broker_id:-not found}"
 
         local broker_endpoint=""
         if [[ -n "$broker_id" && "$broker_id" != "None" ]]; then
             # Get the console (HTTPS) endpoint from broker details
             broker_endpoint=$(aws mq describe-broker --broker-id "$broker_id" --query 'BrokerInstances[0].ConsoleURL' --output text 2>/dev/null | sed 's|https://||' | sed 's|/.*||' || true)
+            echo "    Broker endpoint: ${broker_endpoint:-not found}"
         fi
 
         if [[ -z "$broker_endpoint" ]]; then
