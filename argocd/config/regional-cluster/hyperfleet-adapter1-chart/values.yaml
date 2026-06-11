@@ -22,6 +22,15 @@ hyperfleetAdapter1Chart:
     # Target revision/tag
     targetRevision: v0.3.0
 
+  # Helm values passed to the upstream hyperfleet-adapter chart via ArgoCD
+  helmValues:
+    image:
+      registry: quay.io/openshift-hyperfleet
+      repository: hyperfleet-adapter
+      tag: v0.2.1
+      pullPolicy: Always
+    replicaCount: 1
+
   # Sync policy configuration
   syncPolicy:
     # Automated sync settings

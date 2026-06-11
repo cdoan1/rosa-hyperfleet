@@ -15,11 +15,8 @@ spec:
     helm:
       valuesObject:
         image:
-          registry: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet
-          repository: hyperfleet-adapter
-          tag: latest
-          pullPolicy: Always
-        replicaCount: 1
+          {{- toYaml .Values.hyperfleetAdapter1Chart.helmValues.image | nindent 10 }}
+        replicaCount: {{ .Values.hyperfleetAdapter1Chart.helmValues.replicaCount | default 1 }}
 
         # Broker configuration for hyperfleet-adapter
         # Uses hyperfleet-broker library: https://github.com/openshift-hyperfleet/hyperfleet-broker
