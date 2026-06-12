@@ -17,39 +17,42 @@ params:
     required: true
 
 preconditions:
-  - name: "clusterStatus"
+  - name: clusterStatus
     api_call:
-      method: "GET"
-      url: "/clusters/{{ .clusterId }}"
+      method: GET
+      url: /clusters/{{ .clusterId }}
       timeout: 10s
       retry_attempts: 3
       retry_backoff: "exponential"
     capture:
-      - name: "clusterName"
-        field: "name"
-      - name: "apiGeneration"
-        field: "generation"
-      - name: "timestamp"
-        field: "created_time"
-      - name: "readyConditionStatus"
-        expression: |
+      - field: name
+        name: clusterName
+      - field: generation
+        name: apiGeneration
+      - field: created_time
+        name: timestamp
+      # is_deleting is the canonical deletion gate used throughout payload expressions.
+      # Capturing it here avoids repeating "has(clusterStatus.deleted_time)" everywhere and
+      # prevents false-positive Finalized=True when resources are absent for
+      # unrelated reasons (e.g., first reconciliation before provisioning).
+      # has() safely checks map key presence without requiring deleted_time to exist.
+      - name: is_deleting
+        expression: "has(clusterStatus.deleted_time)"
+      - expression: |
           status.conditions.filter(c, c.type == "Ready").size() > 0
             ? status.conditions.filter(c, c.type == "Ready")[0].status
             : "False"
-
-      - name: "specDeletionRequested"
-        expression: |
-          has(spec.deletionRequested) && spec.deletionRequested != ""
-            ? "True"
+        name: readyConditionStatus
+      - expression: |
+          status.conditions.filter(c, c.type == "Reconciled").size() > 0
+            ? status.conditions.filter(c, c.type == "Reconciled")[0].status
             : "False"
-
-      # expression: "\"mc01\""  # TBC coming from placement adapter
-      - name: "placementClusterName"
+        name: reconciledConditionStatus
+      - name: placementClusterName
         expression: |
           has(spec.placement) && spec.placement != ""
             ? spec.placement
             : "mc01"
-
       - name: "adapterName"
         expression: "\"adapter1\""  # TBC coming from config passed to params
 
@@ -62,7 +65,7 @@ preconditions:
           has(spec.zone) && spec.zone != ""
             ? spec.zone
             : "us-east-1a"
-
+ 
       - name: "region"
         expression: |
           has(spec.region) && spec.region != ""
@@ -133,45 +136,52 @@ preconditions:
 
     # check if the cluster is not ready
     conditions:
-      - field: "readyConditionStatus"
-        operator: "equals"
+      - field: readyConditionStatus
+        operator: equals
         value: "False"
-      - field: "specDeletionRequested"
-        operator: "equals"
+      - field: reconciledConditionStatus
+        operator: equals
         value: "False"
 
-  - name: "validationCheck"
-    # Valid CEL expression
+  - name: validationCheck # Valid CEL expression
     expression: |
-      readyConditionStatus == "False" && specDeletionRequested == "False"
+      readyConditionStatus == "False"
 
 # Resources with valid K8s manifests
 resources:
-  - name: "hostedClusterBundle"
+  - name: hostedClusterBundle
     transport:
-      client: "maestro"
+      client: maestro
       maestro:
         target_cluster: "{{ .placementClusterName }}"
     manifest:
-      ref: "/etc/adapter/manifestwork.yaml"
-
+      ref: /etc/adapter/manifestwork.yaml
     discovery:
       by_name: "work-{{ .clusterId }}"
-
+    # discover sub-resources within the manifestwork
     nested_discoveries:
-      - name: "clusterNamespace"
+      - name: clusterNamespace
         discovery:
           by_selectors:
             label_selector:
-              hyperfleet.io/resource-type: "namespace"
-              hyperfleet.io/cluster-id: "{{ .clusterId }}"  
-      - name: "hostedCluster"
+              hyperfleet.io/resource-type: namespace
+              hyperfleet.io/cluster-id: "{{ .clusterId }}"
+      - name: hostedCluster
         discovery:
           by_name: "{{ .clusterName }}"
-      - name: "clusterConfig"
+      - name: clusterConfig
         discovery:
           by_name: "cluster-config"
           namespace: "{{ .clusterId }}"
+    lifecycle:
+      delete:
+        # propagationPolicy is ignored for Maestro transport — ManifestWork's
+        # spec.deleteOption.propagationPolicy governs sub-resource cleanup.
+        propagationPolicy: Background
+        when:
+          # Delete the ManifestWork when the cluster is marked for deletion.
+          # Maestro will clean up the Namespace and sub-resources asynchronously.
+          expression: "is_deleting"
 
 post:
   payloads:
@@ -256,6 +266,40 @@ post:
                   : "HostedCluster not yet available")
                 : "Waiting for HostedCluster status feedback"
 
+          # Finalized: True once ManifestWork is confirmed deleted; triggers API hard-delete.
+          # Four-part guard (per design decision matrix):
+          #   1. is_deleting              — only report True when deletion is actually pending
+          #   2. executionStatus          — prevents false True when executor failed mid-run
+          #   3. resourcesSkipped         — prevents false True when preconditions skipped resources
+          #   4. ManifestWork gone        — cleanup confirmed by Maestro
+          - type: Finalized
+            status:
+              expression: |
+                is_deleting
+                  && adapter.?executionStatus.orValue("") == "success"
+                  && !adapter.?resourcesSkipped.orValue(false)
+                  && !resources.?agentNamespaceManifestWork.hasValue()
+                ? "True"
+                : "False"
+            reason:
+              expression: |
+                !is_deleting
+                ? ""
+                : adapter.?executionStatus.orValue("") != "success"
+                  ? "AdapterUnhealthy"
+                  : !resources.?agentNamespaceManifestWork.hasValue()
+                    ? "CleanupConfirmed"
+                    : "CleanupInProgress"
+            message:
+              expression: |
+                !is_deleting
+                ? ""
+                : adapter.?executionStatus.orValue("") != "success"
+                  ? "Cannot confirm cleanup while adapter is unhealthy"
+                  : !resources.?agentNamespaceManifestWork.hasValue()
+                    ? "ManifestWork deleted; Maestro cleanup confirmed"
+                    : "Delete request sent; waiting for Maestro to complete async cleanup"
+
         # Use CEL expression for numeric fields to preserve type (not Go template which outputs strings)
         observed_generation:
           expression: "generation"
@@ -291,11 +335,13 @@ post:
                 : ""
 
   post_actions:
-    - name: "reportClusterStatus"
+    - name: reportClusterStatus
+      when:
+        expression: "!adapter.resourcesSkipped"    
       api_call:
-        method: "PUT"
-        url: "/clusters/{{ .clusterId }}/statuses"
+        method: PUT
+        url: /clusters/{{ .clusterId }}/statuses
         headers:
-          - name: "Content-Type"
-            value: "application/json"
+          - name: Content-Type
+            value: application/json
         body: "{{ .clusterStatusPayload }}"
