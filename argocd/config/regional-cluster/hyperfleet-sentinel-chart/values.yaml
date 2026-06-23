@@ -31,9 +31,8 @@ hyperfleetSentinelChart:
       # Allow empty resources to be managed
       selfHeal: true
 
-    # Sync options
-    syncOptions: []
-      # Namespace creation is handled by another chart
+    # Sync options (retry, ServerSideApply, CreateNamespace) are hardcoded
+    # in the Application template to match the root ApplicationSet.
 
   # Additional values to pass to the hyperfleet-sentinel chart
   # These will be merged into the Application spec

@@ -88,7 +88,12 @@ spec:
       prune: {{ .Values.hyperfleetAdapter1Chart.syncPolicy.automated.prune }}
       selfHeal: {{ .Values.hyperfleetAdapter1Chart.syncPolicy.automated.selfHeal }}
     {{- end }}
-    {{- if .Values.hyperfleetAdapter1Chart.syncPolicy.syncOptions }}
+    retry:
+      limit: -1
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
     syncOptions:
-      {{- toYaml .Values.hyperfleetAdapter1Chart.syncPolicy.syncOptions | nindent 6 }}
-    {{- end }}
+    - ServerSideApply=true
+    - CreateNamespace=true

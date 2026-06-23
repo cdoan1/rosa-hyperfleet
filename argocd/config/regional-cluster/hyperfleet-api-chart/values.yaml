@@ -28,8 +28,8 @@ hyperfleet-api-chart:
       prune: true
       # Enable self-healing
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+    # Sync options (retry, ServerSideApply, CreateNamespace) are hardcoded
+    # in the Application template to match the root ApplicationSet.
 
   # Additional helm values to pass to hyperfleet-api chart
   # These will be passed as --helm-set-string or via values

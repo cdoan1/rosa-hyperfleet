@@ -28,7 +28,12 @@ spec:
       prune: {{ index .Values "hyperfleet-api-chart" "syncPolicy" "automated" "prune" }}
       selfHeal: {{ index .Values "hyperfleet-api-chart" "syncPolicy" "automated" "selfHeal" }}
     {{- end }}
-    {{- if index .Values "hyperfleet-api-chart" "syncPolicy" "syncOptions" }}
+    retry:
+      limit: -1
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
     syncOptions:
-      {{- toYaml (index .Values "hyperfleet-api-chart" "syncPolicy" "syncOptions") | nindent 6 }}
-    {{- end }}
+    - ServerSideApply=true
+    - CreateNamespace=true

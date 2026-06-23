@@ -52,9 +52,8 @@ hyperfleetAdapter1Chart:
       # Allow empty resources to be managed
       selfHeal: true
 
-    # Sync options
-    syncOptions: []
-      # Namespace creation is handled by another chart
+    # Sync options (retry, ServerSideApply, CreateNamespace) are hardcoded
+    # in the Application template to match the root ApplicationSet.
 
 # SecretProviderClass configuration for AWS Secrets Manager
 secretProvider:

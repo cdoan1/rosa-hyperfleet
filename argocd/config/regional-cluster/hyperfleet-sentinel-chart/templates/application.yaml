@@ -28,7 +28,12 @@ spec:
       prune: {{ .Values.hyperfleetSentinelChart.syncPolicy.automated.prune }}
       selfHeal: {{ .Values.hyperfleetSentinelChart.syncPolicy.automated.selfHeal }}
     {{- end }}
-    {{- if .Values.hyperfleetSentinelChart.syncPolicy.syncOptions }}
+    retry:
+      limit: -1
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
     syncOptions:
-      {{- toYaml .Values.hyperfleetSentinelChart.syncPolicy.syncOptions | nindent 6 }}
-    {{- end }}
+    - ServerSideApply=true
+    - CreateNamespace=true
