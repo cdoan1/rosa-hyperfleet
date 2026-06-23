@@ -117,7 +117,7 @@ else
     echo "  OIDC Bucket ARN: ${TF_VAR_oidc_bucket_arn}"
     echo "  OIDC Region:     ${TF_VAR_oidc_bucket_region}"
 
-    # ZOA outputs bucket ARN (optional — only present when enable_zoa=true on RC)
+    # ZOA outputs bucket ARN
     export TF_VAR_zoa_outputs_bucket_arn=$(cd "$_RC_TF_DIR" && terraform output -raw zoa_bucket_arn 2>/dev/null || echo "")
     echo "  ZOA Bucket ARN:  ${TF_VAR_zoa_outputs_bucket_arn:-<not available>}"
 
