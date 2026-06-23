@@ -24,6 +24,9 @@
 #                     Prints the S3 URI so callers can fetch logs manually.
 #                     Used in CI to avoid publishing sensitive data (e.g. maestro
 #                     secrets) to public artifact stores.
+#   LEAKTK_GATE     — Defaults to "true": abort with non-zero exit when leaktk
+#                     detects secrets remaining after redaction. Set to "false"
+#                     to log findings as warnings without blocking.
 #
 # All collection failures are logged but do not cause a non-zero exit, so
 # this script is safe to call from test failure handlers.
@@ -58,8 +61,54 @@ redact_logs() {
             -e 's/\(aws_session_token\|security_token\)\([ =:]*\)[^ ]*/\1\2[REDACTED]/gi' \
             -e 's/"\(aws_secret_access_key\|secret_key\)"[[:space:]]*:[[:space:]]*"[^"]*"/"\1":"[REDACTED]"/gi' \
             -e 's/"\(aws_session_token\|security_token\)"[[:space:]]*:[[:space:]]*"[^"]*"/"\1":"[REDACTED]"/gi' \
+            -e 's/"\(password\|db\.password\|db_password\|connection_string\|dsn\)"[[:space:]]*:[[:space:]]*"[^"]*"/"\1":"[REDACTED]"/gi' \
+            -e 's/\(password\|db\.password\|db_password\)\([ =:]*\)[^ ]*/\1\2[REDACTED]/gi' \
+            -e 's/"\(bearer_token\|token\|access_token\|refresh_token\|client_secret\|api_key\)"[[:space:]]*:[[:space:]]*"\([^"\\]\|\\.\)*"/"\1":"[REDACTED]"/gi' \
+            -e 's/"\(pull_secret\|pullSecret\|ssh_key\|sshKey\|private_key\|privateKey\|kubeconfig\|admin_kubeconfig\)"[[:space:]]*:[[:space:]]*"\([^"\\]\|\\.\)*"/"\1":"[REDACTED]"/gi' \
+            -e 's/-----BEGIN[A-Z ]* PRIVATE KEY-----[^-]*-----END[A-Z ]* PRIVATE KEY-----/[REDACTED_KEY]/g' \
+            -e 's/-----BEGIN CERTIFICATE-----[^-]*-----END CERTIFICATE-----/[REDACTED_CERT]/g' \
+            -e 's|postgres://[^@]*@|postgres://[REDACTED]@|g' \
+            -e 's|postgresql://[^@]*@|postgresql://[REDACTED]@|g' \
+            -e 's|amqp://[^@]*@|amqp://[REDACTED]@|g' \
+            -e 's|amqps://[^@]*@|amqps://[REDACTED]@|g' \
             "$f"
     done
+}
+
+# Scan collected logs for leaked secrets using leaktk as a defense-in-depth
+# layer after sed-based redaction. Scans every file under the given directory.
+# Returns 0 when no leaks are found (or leaktk is not installed).
+scan_for_leaks() {
+    local dir="$1"
+
+    if ! command -v leaktk &>/dev/null; then
+        echo "  leaktk not found; skipping leak scan (install: https://github.com/leaktk/leaktk)"
+        return 0
+    fi
+
+    echo "==> Scanning for leaked secrets with leaktk..."
+
+    local leaktk_output leak_count
+    leaktk_output=$(leaktk scan --kind Files "$dir" 2>&1) || true
+
+    leak_count=$(echo "$leaktk_output" | grep -c '"rule_id"' || true)
+
+    if [[ "$leak_count" -gt 0 ]]; then
+        echo "  WARNING: leaktk detected ${leak_count} potential secret(s) after redaction:"
+        echo "$leaktk_output" | head -100
+        echo ""
+
+        if [[ "${LEAKTK_GATE:-true}" != "false" ]]; then
+            echo "  ERROR: LEAKTK_GATE is enabled — aborting to prevent secret exposure"
+            return 1
+        else
+            echo "  LEAKTK_GATE is disabled; continuing despite findings"
+        fi
+    else
+        echo "  No leaked secrets detected."
+    fi
+
+    return 0
 }
 
 # Switch AWS credentials by setting the active profile.
@@ -119,6 +168,139 @@ discover_mc_clusters() {
         | grep "^${prefix}mc.*-bastion$" \
         | sed 's/-bastion$//' \
         | sort
+}
+
+# ---------------------------------------------------------------------------
+# Core: dump RDS database tables to JSON
+# ---------------------------------------------------------------------------
+
+# Generic PostgreSQL dump: connects using the given credentials and dumps
+# all public-schema tables as timestamped JSON files.
+#   dump_pg_tables <label> <dump_dir> <user> <password> <host> <port> <database>
+dump_pg_tables() {
+    local label="$1" dump_dir="$2"
+    local pg_user="$3" pg_password="$4" pg_host="$5" pg_port="$6" pg_database="$7"
+    local timestamp
+    timestamp=$(date +%Y%m%d-%H%M%S)
+
+    local pgpass_file
+    pgpass_file=$(mktemp -t pgpass-XXXXXX)
+    chmod 600 "$pgpass_file"
+
+    cleanup_pgpass() { rm -f "$pgpass_file"; unset PGPASSFILE PGUSER PGHOST PGPORT PGDATABASE; }
+    trap cleanup_pgpass EXIT INT TERM
+
+    printf '%s:%s:%s:%s:%s\n' "$pg_host" "$pg_port" "$pg_database" "$pg_user" "$pg_password" > "$pgpass_file"
+
+    export PGPASSFILE="$pgpass_file" PGUSER="$pg_user" PGHOST="$pg_host" PGPORT="$pg_port" PGDATABASE="$pg_database"
+
+    local tables
+    tables=$(psql -tAc "SELECT table_name FROM information_schema.tables WHERE table_schema='public'" 2>&1) \
+        || { echo "  Could not list ${label} tables: $tables"; cleanup_pgpass; trap - EXIT INT TERM; return 1; }
+
+    if [[ -z "$tables" ]]; then
+        echo "  No tables found in ${label} database (${pg_database})"
+        cleanup_pgpass; trap - EXIT INT TERM
+        return 1
+    fi
+
+    mkdir -p "$dump_dir"
+
+    local dump_failed=0
+    while IFS= read -r table; do
+        [[ -z "$table" ]] && continue
+        local outfile="${dump_dir}/${table}_${timestamp}.json"
+        if psql -tAc "SELECT json_agg(row_to_json(t)) FROM \"${table}\" t" > "$outfile" 2>/dev/null; then
+            echo "  Dumped ${table} -> $(basename "$outfile")"
+        else
+            echo "  Failed to dump ${table}"
+            dump_failed=1
+        fi
+    done <<< "$tables"
+
+    cleanup_pgpass
+    trap - EXIT INT TERM
+    return $dump_failed
+}
+
+dump_clm_database() {
+    local out_dir="$1"
+
+    echo "==> Dumping CLM database..."
+
+    if ! command -v psql &>/dev/null; then
+        echo "  psql not found; skipping CLM DB dump"
+        return 1
+    fi
+    if ! command -v kubectl &>/dev/null; then
+        echo "  kubectl not found; skipping CLM DB dump"
+        return 1
+    fi
+
+    local pg_user pg_password pg_host pg_port pg_database
+    pg_user=$(kubectl get secret -n hyperfleet-system hyperfleet-api-db-credentials -o jsonpath='{.data.db\.user}' 2>/dev/null | base64 -d) \
+        || { echo "  Could not read CLM DB user from cluster"; return 1; }
+    pg_password=$(kubectl get secret -n hyperfleet-system hyperfleet-api-db-credentials -o jsonpath='{.data.db\.password}' 2>/dev/null | base64 -d) \
+        || { echo "  Could not read CLM DB password from cluster"; return 1; }
+    pg_host=$(kubectl get secret -n hyperfleet-system hyperfleet-api-db-credentials -o jsonpath='{.data.db\.host}' 2>/dev/null | base64 -d) \
+        || { echo "  Could not read CLM DB host from cluster"; return 1; }
+    pg_port=$(kubectl get secret -n hyperfleet-system hyperfleet-api-db-credentials -o jsonpath='{.data.db\.port}' 2>/dev/null | base64 -d) \
+        || { echo "  Could not read CLM DB port from cluster"; return 1; }
+    pg_database=$(kubectl get secret -n hyperfleet-system hyperfleet-api-db-credentials -o jsonpath='{.data.db\.name}' 2>/dev/null | base64 -d) \
+        || pg_database="hyperfleet"
+
+    if dump_pg_tables "CLM" "${out_dir}/db-dump/clm" "$pg_user" "$pg_password" "$pg_host" "$pg_port" "$pg_database"; then
+        echo "==> CLM DB dump complete: ${out_dir}/db-dump/clm"
+    else
+        echo "==> CLM DB dump finished with errors"
+        return 1
+    fi
+}
+
+dump_maestro_database() {
+    local out_dir="$1"
+
+    echo "==> Dumping Maestro database..."
+
+    if ! command -v psql &>/dev/null; then
+        echo "  psql not found; skipping Maestro DB dump"
+        return 1
+    fi
+    if ! command -v kubectl &>/dev/null; then
+        echo "  kubectl not found; skipping Maestro DB dump"
+        return 1
+    fi
+
+    local maestro_pod
+    maestro_pod=$(kubectl get pod -n maestro-server \
+        -l app=maestro,component=maestro-server \
+        --field-selector=status.phase=Running \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) \
+        || { echo "  Could not find a running Maestro pod"; return 1; }
+
+    if [[ -z "$maestro_pod" ]]; then
+        echo "  No running Maestro pod found in maestro-server namespace"
+        return 1
+    fi
+
+    local pg_user pg_password pg_host pg_port pg_database
+    pg_user=$(kubectl exec -n maestro-server "$maestro_pod" -c service -- cat /mnt/secrets-store/db.user 2>/dev/null) \
+        || { echo "  Could not read Maestro DB user from pod"; return 1; }
+    pg_password=$(kubectl exec -n maestro-server "$maestro_pod" -c service -- cat /mnt/secrets-store/db.password 2>/dev/null) \
+        || { echo "  Could not read Maestro DB password from pod"; return 1; }
+    pg_host=$(kubectl exec -n maestro-server "$maestro_pod" -c service -- cat /mnt/secrets-store/db.host 2>/dev/null) \
+        || { echo "  Could not read Maestro DB host from pod"; return 1; }
+    pg_port=$(kubectl exec -n maestro-server "$maestro_pod" -c service -- cat /mnt/secrets-store/db.port 2>/dev/null) \
+        || { echo "  Could not read Maestro DB port from pod"; return 1; }
+    pg_database=$(kubectl exec -n maestro-server "$maestro_pod" -c service -- cat /mnt/secrets-store/db.name 2>/dev/null) \
+        || pg_database="maestro"
+
+    if dump_pg_tables "Maestro" "${out_dir}/db-dump/maestro" "$pg_user" "$pg_password" "$pg_host" "$pg_port" "$pg_database"; then
+        echo "==> Maestro DB dump complete: ${out_dir}/db-dump/maestro"
+    else
+        echo "==> Maestro DB dump finished with errors"
+        return 1
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -304,6 +486,10 @@ if [[ "$CLUSTER_SCOPE" == "all" || "$CLUSTER_SCOPE" == "regional" ]]; then
     echo ""
     if use_profile "regional"; then
         collect_logs_for_cluster "${PREFIX}regional" "$RC_NAMESPACES" "${OUTPUT_DIR}/rc" || failed=1
+        if [[ "${S3_ONLY:-}" != "true" ]]; then
+            dump_clm_database "${OUTPUT_DIR}/rc" || failed=1
+            dump_maestro_database "${OUTPUT_DIR}/rc" || failed=1
+        fi
     else
         failed=1
     fi
@@ -333,6 +519,9 @@ if [[ -d "$OUTPUT_DIR" ]]; then
     echo ""
     echo "Redacting sensitive values..."
     redact_logs "$OUTPUT_DIR"
+
+    # Defense-in-depth: scan for secrets that sed-based redaction may have missed
+    scan_for_leaks "$OUTPUT_DIR" || failed=1
 fi
 
 echo ""

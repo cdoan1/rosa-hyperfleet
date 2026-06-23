@@ -21,6 +21,7 @@ ARG PRETTIER_VERSION=3.8.1
 ARG YQ_VERSION=v4.44.3
 ARG K6_VERSION=0.55.0
 ARG PROMETHEUS_VERSION=3.4.1
+ARG LEAKTK_VERSION=0.3.3
 
 # Global curl retry and timeout settings for improved download reliability
 ARG CURL_RETRY=3
@@ -33,6 +34,7 @@ RUN dnf install -y \
         make \
         jq \
         unzip \
+        xz \
         python3-pip \
         findutils \
         gnupg2 \
@@ -158,6 +160,26 @@ RUN arch=$(uname -m) && \
     chmod +x /usr/local/bin/promtool && \
     rm -f "${PROM_TAR}" sha256sums.txt && \
     promtool --version
+
+# leaktk (secret leak scanner, checksum-verified)
+ARG CURL_RETRY
+ARG CURL_RETRY_DELAY
+ARG CURL_MAX_TIME
+RUN arch=$(uname -m) && \
+    case "${arch}" in \
+        x86_64)  LEAKTK_ARCH="x86_64" ;; \
+        aarch64) LEAKTK_ARCH="arm64" ;; \
+    esac && \
+    LEAKTK_TAR="leaktk-${LEAKTK_VERSION}-linux-${LEAKTK_ARCH}.tar.xz" && \
+    LEAKTK_CHECKSUMS="leaktk_${LEAKTK_VERSION}_checksums.txt" && \
+    LEAKTK_BASE="https://github.com/leaktk/leaktk/releases/download/v${LEAKTK_VERSION}" && \
+    curl --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --max-time ${CURL_MAX_TIME} -fsSLO "${LEAKTK_BASE}/${LEAKTK_TAR}" && \
+    curl --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --max-time ${CURL_MAX_TIME} -fsSLO "${LEAKTK_BASE}/${LEAKTK_CHECKSUMS}" && \
+    grep "${LEAKTK_TAR}" "${LEAKTK_CHECKSUMS}" | sha256sum -c - && \
+    tar -xJf "${LEAKTK_TAR}" -C /usr/local/bin leaktk && \
+    chmod +x /usr/local/bin/leaktk && \
+    rm -f "${LEAKTK_TAR}" "${LEAKTK_CHECKSUMS}" && \
+    leaktk version
 
 # Pre-create cache directories writable by any UID (OpenShift runs as random UID)
 RUN mkdir -p /tmp/.uv-cache /tmp/.uv-python /tmp/.terraform.d /tmp/.cache/go-build /tmp/gopath && \
