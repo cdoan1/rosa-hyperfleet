@@ -30,6 +30,17 @@ For each documentation file, check:
 - Are file paths, module names, and command examples still valid?
 - Do Mermaid diagrams reflect the current architecture?
 
+### CLAUDE.md Validation
+
+Read `CLAUDE.md` and validate against the actual repo state:
+
+- Does it reflect the current repository structure? Compare with `tree -d -L 2`.
+- Are key directories/files documented?
+- Are coding conventions and project standards up-to-date?
+- Do referenced Make targets exist? Check against the current `Makefile`.
+- Are development workflow instructions (pre-push, etc.) accurate?
+- Are internal and external links still reachable?
+
 ### Completeness (of existing docs only)
 
 - Do existing docs fully cover the topics they describe, or have sections become incomplete due to code changes?
@@ -46,6 +57,37 @@ For each documentation file, check:
 - Are there references to deprecated tools, removed files, or old procedures?
 - Do "current" or "planned" statements still hold true?
 - Are links (internal and external) still reachable?
+
+### Conciseness
+
+Look for and fix documentation that is:
+
+- Too verbose — multiple paragraphs explaining a simple concept
+- Too many examples — 5+ examples when 1-2 would suffice
+- Redundant — repeating information already in other docs
+- Step-by-step tutorials where a high-level overview would suffice
+
+### CI Documentation
+
+Review CI-related documentation for accuracy:
+
+- Do documented CI steps match actual workflow files (`.github/workflows/`, `ci/`, `.tekton/`)?
+- Are new CI jobs documented?
+- Are Prow job configs documented if present?
+- Is the CI troubleshooting guide up-to-date?
+
+### Security — Sensitive Data in Docs
+
+Scan documentation for exposed sensitive information:
+
+- **IP addresses**: private (`10.x`, `172.16-31.x`, `192.168.x`) or public
+- **AWS account numbers**: 12-digit numbers, ARNs with account IDs
+- **Hostnames**: internal (`*.internal`, `*.corp`), customer-specific URLs
+- **Credentials**: AWS access keys (`AKIA...`), GitHub tokens (`ghp_...`, `gho_...`), base64-encoded secrets
+- **Email addresses**: real user/customer emails
+- **Cluster IDs and resource names**: real cluster IDs, customer-specific names
+
+Replace with placeholders: `<aws-account-id>`, `<ip-address>`, `example.com`, `user@example.com`, `<cluster-id>`.
 
 ## Step 3: Draft Updates
 
