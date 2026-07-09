@@ -48,6 +48,7 @@ type ClusterSpec struct {
 ```
 
 **Syntax**:
+
 - Base mode: `+hyperfleet:write-mode=X`
 - Override: `+hyperfleet:write-mode[FeatureSetName]=X`
 - Valid feature set names: `Default`, `TechPreviewNoUpgrade`, `DevPreviewNoUpgrade`
@@ -56,6 +57,7 @@ type ClusterSpec struct {
 ### Data Model Changes
 
 **Current FieldMeta** (`pkg/markers/types.go`):
+
 ```go
 type FieldMeta struct {
     FieldPath   string
@@ -66,6 +68,7 @@ type FieldMeta struct {
 ```
 
 **Proposed FieldMeta**:
+
 ```go
 type FieldMeta struct {
     FieldPath        string
@@ -77,6 +80,7 @@ type FieldMeta struct {
 ```
 
 **JSON Registry Example**:
+
 ```json
 {
   "fieldPath": "spec.etcd",
@@ -102,7 +106,7 @@ var writeModeGatedPattern = regexp.MustCompile(`\+hyperfleet:write-mode\[([^\]]+
 
 func (s *MarkerScanner) extractMarkers(field *ast.Field, fieldPath string) *FieldMeta {
     // ... existing code ...
-    
+
     // Extract gated write-modes
     gatedModes := make(map[string]WriteMode)
     for _, match := range writeModeGatedPattern.FindAllStringSubmatch(comments, -1) {
@@ -110,7 +114,7 @@ func (s *MarkerScanner) extractMarkers(field *ast.Field, fieldPath string) *Fiel
         mode := WriteMode(match[2])  // mutable
         gatedModes[featureSet] = mode
     }
-    
+
     if len(gatedModes) > 0 {
         meta.GatedWriteModes = gatedModes
     }
@@ -143,14 +147,14 @@ Update `validateWriteMode()` to check feature-set-specific mode:
 func (v *Validator) validateWriteMode(fieldPath string, meta registry.FieldMeta, req *Request) error {
     // Determine effective write-mode for this request's feature set
     effectiveMode := meta.WriteMode  // Default
-    
+
     // Check for feature-set-specific override
     if meta.GatedWriteModes != nil {
         if override, ok := meta.GatedWriteModes[string(req.FeatureSet)]; ok {
             effectiveMode = override
         }
     }
-    
+
     // Enforce the effective mode
     switch effectiveMode {
     case registry.ServiceSet:
@@ -202,6 +206,7 @@ func TestValidator_GatedWriteMode(t *testing.T) {
 ### Backward Compatibility
 
 Existing fields without gated write-modes continue to work unchanged:
+
 - No breaking changes to current markers
 - New syntax is opt-in
 - Empty `GatedWriteModes` map treated as "no overrides"
@@ -267,12 +272,14 @@ Use multiple gates: `CanViewEtcd`, `CanWriteEtcd`.
 ### Chosen Approach: Gated Write-Modes
 
 **Pros**:
+
 - Declarative (visible in code)
 - Extends existing marker system
 - Backward compatible
 - Scales to many fields
 
 **Cons**:
+
 - Adds complexity to marker syntax
 - Requires parser changes
 - Validation logic more complex
