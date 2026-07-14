@@ -1,15 +1,15 @@
 # Feature-Gated Write-Mode Control
 
-**Status**: Design Proposal (REVISED)  
+**Status**: Design Proposal  
 **Jira**: [ROSAENG-61570](https://redhat.atlassian.net/browse/ROSAENG-61570)  
 **Author**: Chris Doan  
-**Date**: 2026-07-09 (Revised: 2026-07-09)  
+**Date**: 2026-07-09  
 **Reviewers**: Lucas (reach out for detailed requirements)  
 **Related PR**: [openshift-online/rosa-hyperfleet#678](https://github.com/openshift-online/rosa-hyperfleet/pull/678/changes)
 
 ## Problem Statement
 
-Currently, HyperFleet's field control system supports three independent dimensions:
+The initial spec for the field control system supports three independent dimensions:
 
 1. **Visibility** (`+k8s:openapi-gen=false`) - whether fields appear in OpenAPI/API surface
 2. **Write Mode** (`+hyperfleet:write-mode=X`) - customer mutability (mutable/immutable/service-set)
@@ -17,7 +17,7 @@ Currently, HyperFleet's field control system supports three independent dimensio
 
 **The limitation**: A field's write-mode is **fixed for all customers**. We cannot vary write-mode based on customer tier or feature gate enablement.
 
-### Primary Use Case (from Slack/Jira feedback)
+### Primary Use Case
 
 **Key insight**: Write-mode control needs to work **independently** of feature gating, not only for fields behind a FeatureGate.
 
@@ -35,11 +35,11 @@ Currently, HyperFleet's field control system supports three independent dimensio
 
 Today, we must choose ONE write-mode for all customers, preventing these patterns.
 
-## Proposed Solution (REVISED)
+## Proposed Solution
 
 ### Follow Existing OpenShift Marker Patterns
 
-**Decision from Slack/Jira feedback**: Instead of inventing new bracket syntax, follow the existing OpenShift marker conventions that support **multiple arguments**.
+Instead of inventing new bracket syntax, follow the existing OpenShift marker conventions that support **multiple arguments**.
 
 **Reference patterns** (from openshift/api):
 
@@ -60,7 +60,6 @@ type ClusterSpec struct {
     // Default: immutable for all customers
     // Override: mutable when MyPremiumFeature gate is enabled
     // +hyperfleet:write-mode=immutable
-    // +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="",writeMode="immutable"
     // +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="MyPremiumFeature",writeMode="mutable"
     ReleaseChannel string `json:"releaseChannel"`
 
@@ -68,7 +67,6 @@ type ClusterSpec struct {
     // Default: service-set (platform-managed)
     // TechPreview+: mutable (customer-controlled)
     // +hyperfleet:write-mode=service-set
-    // +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="",writeMode="service-set"
     // +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="HyperFleetEtcdConfig",writeMode="mutable"
     // +openshift:enable:FeatureGate=HyperFleetEtcdConfig
     Etcd *EtcdSpec `json:"etcd,omitempty"`
@@ -77,10 +75,10 @@ type ClusterSpec struct {
 
 **Syntax**:
 
-- Base mode: `+hyperfleet:write-mode=X` (default/fallback)
+- Base mode: `+hyperfleet:write-mode=X` (default/fallback when no gate overrides match)
 - Override: `+hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="GateName",writeMode="X"`
-- Empty `featureGate=""` = default (no gates enabled)
 - Valid write modes: `mutable`, `immutable`, `service-set`
+- Overrides can be more permissive (e.g., immutable → mutable for premium) or more restrictive (e.g., mutable → immutable for compliance)
 
 ### Data Model Changes
 
@@ -119,7 +117,6 @@ type FeatureGateWriteMode struct {
   "fieldPath": "spec.releaseChannel",
   "writeMode": "immutable",
   "featureGateAwareWriteModes": [
-    { "featureGate": "", "writeMode": "immutable" },
     { "featureGate": "MyPremiumFeature", "writeMode": "mutable" }
   ]
 }
@@ -133,7 +130,6 @@ type FeatureGateWriteMode struct {
   "writeMode": "service-set",
   "featureGate": "HyperFleetEtcdConfig",
   "featureGateAwareWriteModes": [
-    { "featureGate": "", "writeMode": "service-set" },
     { "featureGate": "HyperFleetEtcdConfig", "writeMode": "mutable" }
   ]
 }
@@ -202,16 +198,10 @@ func (v *Validator) validateWriteMode(fieldPath string, meta registry.FieldMeta,
 
     // Check for feature-gate-aware write-mode overrides
     if len(meta.FeatureGateAwareWriteModes) > 0 {
-        // Find the most specific match based on enabled gates
-        // Priority: specific gate match > default ("") > base WriteMode
         for _, override := range meta.FeatureGateAwareWriteModes {
-            if override.FeatureGate == "" {
-                // Default override (no gates required)
+            if req.IsFeatureGateEnabled(override.FeatureGate) {
                 effectiveMode = override.WriteMode
-            } else if req.IsFeatureGateEnabled(override.FeatureGate) {
-                // Specific gate is enabled - this takes precedence
-                effectiveMode = override.WriteMode
-                break  // Most specific match wins
+                break  // First matching gate wins
             }
         }
     }
@@ -308,7 +298,6 @@ No mass migration required - fields adopt gated modes incrementally.
 // Standard customers: immutable (set on create only)
 // Premium customers (with MyPremiumFeature gate): mutable
 // +hyperfleet:write-mode=immutable
-// +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="",writeMode="immutable"
 // +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="MyPremiumFeature",writeMode="mutable"
 ReleaseChannel string `json:"releaseChannel"`
 ```
@@ -320,7 +309,6 @@ ReleaseChannel string `json:"releaseChannel"`
 // Default: service-set (platform-managed, read-only)
 // TechPreview+: mutable (customer-controlled for testing)
 // +hyperfleet:write-mode=service-set
-// +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="",writeMode="service-set"
 // +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="HyperFleetEtcdConfig",writeMode="mutable"
 // +openshift:enable:FeatureGate=HyperFleetEtcdConfig
 Etcd *EtcdSpec `json:"etcd,omitempty"`
@@ -343,10 +331,20 @@ Tags map[string]string `json:"tags,omitempty"`
 // BetaFeature1: mutable (beta testers)
 // PremiumFeature: mutable (premium tier)
 // +hyperfleet:write-mode=immutable
-// +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="",writeMode="immutable"
 // +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="BetaFeature1",writeMode="mutable"
 // +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="PremiumFeature",writeMode="mutable"
 AdvancedConfig *Config `json:"advancedConfig,omitempty"`
+```
+
+### Example 5: Restrictive Override (Compliance Lock-Down)
+
+```go
+// Field is mutable by default, but becomes immutable when a compliance gate is enabled
+// Default: mutable (customers can change freely)
+// StrictComplianceMode: immutable (locked down for regulated environments)
+// +hyperfleet:write-mode=mutable
+// +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="StrictComplianceMode",writeMode="immutable"
+AuditLogDestination string `json:"auditLogDestination"`
 ```
 
 ## Trade-offs and Alternatives
@@ -355,7 +353,7 @@ AdvancedConfig *Config `json:"advancedConfig,omitempty"`
 
 **Original proposal**: `+hyperfleet:write-mode[FeatureSetName]=mutable`
 
-**Rejected (from Slack feedback)**: Invents new syntax instead of following existing OpenShift patterns. OpenShift API already has established multi-argument marker patterns like `FeatureGateAwareEnum` and `FeatureGateAwareXValidation`.
+**Rejected**: Invents new syntax instead of following existing OpenShift patterns. OpenShift API already has established multi-argument marker patterns like `FeatureGateAwareEnum` and `FeatureGateAwareXValidation`.
 
 ### Alternative 2: Separate Fields Per Customer Tier
 
@@ -395,76 +393,36 @@ Add more feature sets: `PremiumDefault`, `PremiumTechPreview`, etc.
 ## Open Questions
 
 1. **Marker name**: Is `FeatureGateAwareWriteMode` the right name? Should it match the pattern `+hyperfleet:validation:X` or be a different namespace?
-   - **Current**: `+hyperfleet:validation:FeatureGateAwareWriteMode`
-   - **Alternative**: `+hyperfleet:FeatureGateAwareWriteMode` (shorter)
+
+- **Current**: `+hyperfleet:validation:FeatureGateAwareWriteMode`
+- **Alternative**: `+hyperfleet:FeatureGateAwareWriteMode` (shorter)
 
 2. **Multiple gate behavior**: If a customer has multiple gates enabled, which write-mode wins?
-   - **Recommendation**: First specific match in marker order (earliest in source code)
-   - **Alternative**: Most permissive (mutable > immutable > service-set)
+
+- **Recommendation**: First specific match in marker order (earliest in source code)
+- **Alternative**: Most permissive (mutable > immutable > service-set)
 
 3. **Validation error messages**: How detailed should errors be for gate-aware rejections?
-   - **Recommendation**: "field is {write-mode} for your account tier" (don't expose gate names to customers)
+
+- **Recommendation**: "field is {write-mode} for your account tier" (don't expose gate names to customers)
 
 4. **CRD variant generation**: Should CRD YAML show different write-modes per variant?
-   - **Recommendation**: Not initially - CRDs show schema, not validation rules. This is runtime validation.
+
+- **Recommendation**: Not initially - CRDs show schema, not validation rules. This is runtime validation.
 
 5. **Migration path**: Should we auto-migrate existing fields or require explicit opt-in?
-   - **Recommendation**: Explicit opt-in only. No automatic migration.
+
+- **Recommendation**: Explicit opt-in only. No automatic migration.
 
 6. **Customer gate enablement**: How do we determine which gates are enabled for a customer at runtime?
-   - **Option A**: Lookup from database based on subscription tier
-   - **Option B**: Include in request authentication/authorization context
-   - **Option C**: Explicit parameter in Platform API request
 
-## Feedback Received
-
-### From Slack/Jira Discussion (2026-07-09)
-
-**Key insights** (Jira comment by ship-help-jira):
-
-1. **Primary use case clarification**: Write-mode control needs to work **independently** of feature gating. It's not only for fields behind a FeatureGate. The main scenario is: a field is GA (no `+openshift:enable:FeatureGate` marker) and we still want to give particular customers the ability to mutate a field that is otherwise immutable.
-
-2. **Marker syntax direction**: Follow existing OpenShift marker conventions that support **multiple arguments**, rather than inventing new bracket syntax like `[FeatureSetName]`.
-
-3. **Reference patterns to study**:
-   - `+openshift:validation:FeatureGateAwareEnum` - allows different enum values depending on which feature gates are enabled
-   - `+openshift:validation:FeatureGateAwareXValidation` - "probably the most useful"; allows conditional CEL validation rules based on feature gate state
-
-4. **Pattern structure**: The existing pattern allows:
-   - A default version with `featureGate=""` (defaults) with one set of values
-   - Additional versions with specific feature gates and different values
-
-**Example from openshift/api**:
-
-```go
-+openshift:validation:FeatureGateAwareEnum:featureGate="MyAwesomeFeature",enum="Val1";"Val2"
-```
-
-### Design Revisions Based on Feedback
-
-✅ **Changed marker syntax** from `+hyperfleet:write-mode[FeatureSetName]=X` to `+hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="GateName",writeMode="X"`
-
-✅ **Clarified use case** to emphasize GA fields with customer-tier control, not just gated fields
-
-✅ **Added data model** for list of `FeatureGateWriteMode` instead of map, to preserve order and allow empty-string default
-
-✅ **Updated validation logic** to check customer's enabled gates, not just feature sets
-
-## Next Steps
-
-1. **Review revised design** with Lucas and team
-2. **Gather feedback** on:
-   - Marker namespace (`+hyperfleet:validation:` vs `+hyperfleet:`)
-   - Multiple-gate priority behavior
-   - Customer gate enablement mechanism
-3. **Study openshift/api patterns** in detail (FeatureGateAwareEnum, FeatureGateAwareXValidation)
-4. **Prototype** marker parsing to validate regex approach
-5. **Implement** phases 1-4 after approval
-6. **Update** `docs/feature-gates.md` with examples
+- **Option A**: Lookup from database based on subscription tier
+- **Option B**: Include in request authentication/authorization context
+- **Option C**: Explicit parameter in Platform API request
 
 ## References
 
 - **Jira**: [ROSAENG-61570](https://redhat.atlassian.net/browse/ROSAENG-61570)
 - **Parent Epic**: [ROSAENG-61383](https://redhat.atlassian.net/browse/ROSAENG-61383)
 - **Current Implementation**: `pkg/featuregate/`, `pkg/validation/`, `pkg/markers/`
-- **OpenShift API Pattern**: https://github.com/openshift/api/tree/master/tools/codegen
+- **OpenShift API Pattern**: [https://github.com/openshift/api/tree/master/tools/codegen](https://github.com/openshift/api/tree/master/tools/codegen)
