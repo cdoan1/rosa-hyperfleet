@@ -131,14 +131,14 @@ If S3 logs are inaccessible for any reason (credentials, expired logs, network i
 
 Use the correct AWS CLI profile based on the failing job and the target cluster:
 
-| Job type             | Cluster | AWS profile    |
-| -------------------- | ------- | -------------- |
-| `nightly-ephemeral`  | RC      | `chai-rc-ci`   |
-| `nightly-ephemeral`  | MC      | `chai-mc-ci`   |
-| `on-demand-e2e`      | RC      | `chai-rc-ci`   |
-| `on-demand-e2e`      | MC      | `chai-mc-ci`   |
-| `nightly-integration`| RC      | `chai-rc-int`  |
-| `nightly-integration`| MC      | `chai-mc-int`  |
+| Job type              | Cluster | AWS profile   |
+| --------------------- | ------- | ------------- |
+| `nightly-ephemeral`   | RC      | `chai-rc-ci`  |
+| `nightly-ephemeral`   | MC      | `chai-mc-ci`  |
+| `on-demand-e2e`       | RC      | `chai-rc-ci`  |
+| `on-demand-e2e`       | MC      | `chai-mc-ci`  |
+| `nightly-integration` | RC      | `chai-rc-int` |
+| `nightly-integration` | MC      | `chai-mc-int` |
 
 ### Finding the S3 URIs
 
@@ -422,10 +422,12 @@ Do **not** raise a PR. Instead:
    - Root cause patterns that were previously unclear
 
    **Keep it low-noise**: post a single message in the thread offering the PR — do not repeat the offer or follow up if there's no response. Example:
+
    ```
    Based on the findings shared here, I can update the CI troubleshooter to recognize this pattern in future runs.
    Should I raise a PR for that? (updates .claude/agents/ci-troubleshooter.md)
    ```
+
    If approved, raise a PR updating this file with the new patterns. Branch name: `chai-bot/ci-troubleshooter-learnings-<short-description>`. Label: `chai-bot`.
    If no response or declined, skip — the team can always update the agent manually.
 

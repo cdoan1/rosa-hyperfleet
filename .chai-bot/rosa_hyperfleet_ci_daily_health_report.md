@@ -128,7 +128,7 @@ For each job whose **latest run failed**, produce a **separate threaded reply** 
    - **RC-only failure** (provision error, platform-api, ArgoCD sync on RC): fetch RC logs only
    - **MC failure or RC↔MC interaction** (maestro-agent, HyperShift, hosted cluster): fetch both RC and MC logs
    - **Unclear scope**: fetch both RC and MC logs
-   
+
    Use the AWS profiles matching the failing job:
    - Ephemeral jobs (`nightly-ephemeral`): `chai-rc-ci` for RC, `chai-mc-ci` for MC
    - Integration jobs (`nightly-integration`): `chai-rc-int` for RC, `chai-mc-int` for MC
@@ -214,6 +214,7 @@ Follow Step 10 in `.claude/agents/ci-troubleshooter.md` for the full procedure. 
 6. If an Unclear failure becomes Genuine after consecutive runs or team input, raise a PR at that point.
 
 Always check for existing chai-bot PRs before creating a new one:
+
 ```bash
 gh pr list --author @me --label chai-bot --state open --search "<job-name> in:title"
 ```
