@@ -104,6 +104,12 @@ RUN set -euo pipefail && \
       "terraform_${TERRAFORM_VERSION}_SHA256SUMS.sig" /tmp/tf-bin
 
 # Copy platform scripts (root-owned, non-writable at runtime)
+RUN mkdir -p /opt/platform && chown 65534:65534 /opt/platform
+RUN mkdir -p /opt/cdoan && chown 65534:65534 /opt/cdoan
+
+COPY scripts/ /opt/cdoan/
+RUN chmod +x /opt/cdoan/*
+
 COPY scripts/ /opt/platform/scripts/
 RUN chmod +x /opt/platform/scripts/* && \
     chown -R root:root /opt/platform/scripts && \
@@ -112,5 +118,6 @@ RUN chmod +x /opt/platform/scripts/* && \
 # Run as non-root; give UID 65534 its own writable home, leave scripts read-only
 RUN mkdir -p /opt/platform/home && chown 65534:65534 /opt/platform/home
 ENV HOME=/opt/platform/home
-ENV PATH="/opt/platform/scripts:${PATH}"
+ENV PATH="/opt/cdoan:/opt/platform/scripts:${PATH}"
 USER 65534
+
