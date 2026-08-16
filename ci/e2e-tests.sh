@@ -141,7 +141,9 @@ fi
 if [[ "$_have_customer_creds" == "true" ]]; then
   test_hcp_creation() {
     echo ""
-    echo "=== HCP Creation Tests ==="
+    echo "=== ROSACTL (clientset sdk) Tests ==="
+    echo "===                               ==="
+    echo "Repo: ${CLI_REPO} - Branch: ${CLI_REF}"
 
     local HCP_CLUSTER_NAME="e2e-$(date +%s)"
 
@@ -151,6 +153,7 @@ if [[ "$_have_customer_creds" == "true" ]]; then
     git clone --depth 1 --branch "${CLI_REF}" \
       "${CLI_REPO}" "${CLI_WORK_DIR}/cli"
     cd "${CLI_WORK_DIR}/cli"
+    echo ""
 
     export GOTOOLCHAIN=auto
     make build
