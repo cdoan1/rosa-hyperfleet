@@ -8,8 +8,8 @@ hyperfleet:
   project: default
 
   source:
-    repoURL: https://github.com/openshift-online/rosa-hyperfleet-api.git
-    targetRevision: f58b3a369751e0944721fe626a4ee8176d4ed91c
+    repoURL: https://github.com/willkutler/rosa-hyperfleet-api.git
+    targetRevision: ROSAENG-65538
     path: hyperfleet-operator/charts
 
   syncPolicy:
@@ -37,3 +37,4 @@ hyperfleet:
       requests:
         cpu: 100m
         memory: 128Mi
+

@@ -22,6 +22,8 @@ spec:
         postgres:
           secretName: {{ .Values.global.postgres_secret_name | default "hyperfleet-db-dsn" }}
           secretKey: {{ .Values.global.postgres_secret_key | default "dsn" }}
+        oidcS3Bucket: {{ index .Values "hyperfleet" "oidcS3Bucket" }}
+        oidcIssuerBaseUrl: {{ index .Values "hyperfleet" "oidcIssuerBaseUrl" }}
 
   destination:
     server: https://kubernetes.default.svc
