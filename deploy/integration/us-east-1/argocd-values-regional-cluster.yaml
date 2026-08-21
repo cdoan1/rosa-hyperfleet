@@ -25,3 +25,6 @@ argo-cd:
       users.anonymous.enabled: 'true'
     rbac:
       policy.default: role:readonly
+hyperfleet:
+  oidcS3Bucket: hyperfleet-oidc-us-east-1
+  oidcIssuerBaseUrl: https://hyperfleet-oidc-us-east-1.s3.us-east-1.amazonaws.com

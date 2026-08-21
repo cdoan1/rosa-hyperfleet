@@ -197,6 +197,9 @@ applications:
           users.anonymous.enabled: "{% if regional_cluster.enable_write_sre_tools %}false{% else %}true{% endif %}"
         rbac:
           policy.default: "{% if regional_cluster.enable_write_sre_tools %}{% else %}role:readonly{% endif %}"
+    hyperfleet:
+      oidcS3Bucket: "hyperfleet-oidc-{{ aws_region }}"
+      oidcIssuerBaseUrl: "https://hyperfleet-oidc-{{ aws_region }}.s3.{{ aws_region }}.amazonaws.com"
 
 # provision_mcs: MC topology, defined per-region. Keys are MC IDs.
 # Fields below are injected into templates as mc.* by render.py.
