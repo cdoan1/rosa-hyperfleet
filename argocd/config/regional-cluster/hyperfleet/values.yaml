@@ -19,8 +19,8 @@ hyperfleet:
 
   helmValues:
     image:
-      repository: quay.io/redhat-user-workloads/rosa-tenant/hyperfleet-operator
-      tag: "b4cd6727179f06048d3bbcca21aad34d1aad5925"
+      repository: quay.io/cdoan0/rosa-hyperfleet-operator
+      tag: "ROSAENG-64871"
       pullPolicy: Always
 
     replicaCount: 2
