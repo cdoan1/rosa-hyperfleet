@@ -95,6 +95,13 @@ def main():
         help="Source branch to test (default: from REPOSITORY_BRANCH env var)",
     )
     parser.add_argument(
+        "--region",
+        default=os.environ.get("REGION", None),
+        help="AWS region to provision (e.g. us-east-1, us-west-2). If omitted, "
+             "auto-discovers the single region from config/ephemeral/. "
+             "(default: from REGION env var)",
+    )
+    parser.add_argument(
         "--eph-branch",
         default=None,
         help="Explicit ephemeral branch name (overrides derivation from --branch). "
@@ -169,7 +176,7 @@ def main():
         else:
             workspace = Path(os.environ.get("WORKSPACE_DIR", "."))
             env_config_dir = workspace / "config" / TARGET_ENVIRONMENT
-        region = discover_region(env_config_dir)
+        region = discover_region(env_config_dir, explicit_region=args.region)
         log.info("Region: %s (from %s)", region, env_config_dir)
 
     # Parse --provision-override-file args into (target_path, override_file) tuples

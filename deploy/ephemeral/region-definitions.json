@@ -6,5 +6,13 @@
       "mc01"
     ],
     "name": "ephemeral"
+  },
+  "us-west-2": {
+    "aws_region": "us-west-2",
+    "environment": "ephemeral",
+    "management_clusters": [
+      "mc01"
+    ],
+    "name": "ephemeral"
   }
 }

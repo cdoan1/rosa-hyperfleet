@@ -28,19 +28,43 @@ PURGE_TIMEOUT = 600  # seconds (10 min); budget for cluster/bundle purge before 
 log = logging.getLogger(__name__)
 
 
-def discover_region(env_config_dir: Path) -> str:
-    """Find the single region YAML in an env config directory.
+def discover_region(env_config_dir: Path, explicit_region: str | None = None) -> str:
+    """Find or validate the region YAML in an env config directory.
 
-    Returns the region name (stem of the YAML file, e.g. "us-east-1").
-    Errors if zero or more than one region file exists.
+    Args:
+        env_config_dir: Directory containing environment config files.
+        explicit_region: Optional region name (e.g. "us-east-1"). If provided,
+            validates that the region config exists and returns it. If None,
+            auto-discovers the single region file.
+
+    Returns:
+        Region name (stem of the YAML file, e.g. "us-east-1").
+
+    Raises:
+        ValueError: If explicit_region doesn't exist, or if auto-discovering
+            and zero or more than one region file exists.
     """
     region_files = [f for f in env_config_dir.glob("*.yaml") if f.name != "defaults.yaml"]
+
+    if explicit_region:
+        # Validate that the specified region exists
+        region_file = env_config_dir / f"{explicit_region}.yaml"
+        if not region_file.exists():
+            available = sorted(f.stem for f in region_files)
+            raise ValueError(
+                f"Region '{explicit_region}' not found in {env_config_dir}. "
+                f"Available regions: {available}"
+            )
+        return explicit_region
+
+    # Auto-discovery mode
     if len(region_files) == 0:
         raise ValueError(f"No region YAML file found in {env_config_dir}")
     if len(region_files) > 1:
         names = sorted(f.name for f in region_files)
         raise ValueError(
-            f"Ephemeral provisioner supports exactly 1 region, found {len(region_files)}: {names}"
+            f"Multiple region configs found. Specify --region to choose one. "
+            f"Found {len(region_files)}: {names}"
         )
     return region_files[0].stem
 

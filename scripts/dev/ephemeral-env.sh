@@ -365,6 +365,7 @@ chain_exit_trap() {
 cmd_provision() {
     local repo="${REPO:-openshift-online/rosa-hyperfleet}"
     local branch="${BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
+    local region="${REGION:-}"
 
     # Generate an ID if not provided
     if [[ -z "${ID:-}" ]]; then
@@ -394,6 +395,7 @@ cmd_provision() {
     echo "  ID:                $ID"
     echo "  REPO:              $repo"
     echo "  BRANCH:            $branch"
+    [[ -z "$region" ]] || echo "  REGION:            $region"
     echo "  ENV CONFIG:        $OVERRIDE_INFO"
     echo "  CONTAINER_ENGINE:  $CONTAINER_ENGINE"
     echo "  IMAGE:             $CI_IMAGE"
@@ -409,10 +411,15 @@ cmd_provision() {
     trap 'rm -rf "${tmpdir:-}"; eval "$_prev_trap"' EXIT
 
     local rc=0
+    # Build region flag if REGION is set
+    local region_flag=""
+    [[ -z "$region" ]] || region_flag="--region $region"
+
     # shellcheck disable=SC2086
     $CONTAINER_ENGINE run --rm \
         $_CONTAINER_AWS_FLAGS \
         -e "GITHUB_TOKEN=$GITHUB_TOKEN" \
+        -e "REGION=$region" \
         $OVERRIDE_MOUNT \
         -v "${REPO_ROOT}:/workspace:ro,z" \
         -v "${tmpdir}:/output:z" \
@@ -422,6 +429,7 @@ cmd_provision() {
         uv run --no-cache ci/ephemeral-provider/main.py \
             --id "$ID" \
             --repo "$repo" --branch "$branch" \
+            $region_flag \
             --save-regional-state /output/tf-outputs.json \
             --save-management-state /output/tf-outputs-mc.json \
     || rc=$?
