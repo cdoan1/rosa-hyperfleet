@@ -8,10 +8,9 @@ hyperfleet:
   project: default
 
   source:
-    repoURL: https://github.com/willkutler/rosa-hyperfleet-api.git
-    targetRevision: ROSAENG-66043
+    repoURL: https://github.com/openshift-online/rosa-hyperfleet-api.git
+    targetRevision: dab88f7dd47f239c3318043a9d849987b0ac5d70
     path: hyperfleet-operator/charts
-
   syncPolicy:
     automated:
       prune: true
