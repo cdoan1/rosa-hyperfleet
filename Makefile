@@ -252,7 +252,7 @@ ephemeral-sre-ui: ## Tunnel SRE UI tools (Grafana, ArgoCD, Prometheus, Thanos, L
 
 ephemeral-e2e: ## Run e2e tests against an ephemeral env
 	@ID="$(ID)" E2E_REF="$(or $(E2E_REF),main)" E2E_REPO="$(E2E_REPO)" \
-	LABEL_FILTER="$(or $(LABEL_FILTER),'hyperfleet-sanity')" \
+	ROSA_GINKGO_LABEL_FILTER="$(or $(ROSA_GINKGO_LABEL_FILTER),'hyperfleet-sanity')" \
 	E2E_SKIP_ROSA_CLI="false" \
 	./scripts/dev/ephemeral-env.sh e2e
 
