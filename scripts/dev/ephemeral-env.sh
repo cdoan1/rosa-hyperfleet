@@ -1142,6 +1142,7 @@ cmd_e2e() {
         -e "CLI_REPO=${CLI_REPO:-}" \
         -e "ROSA_REPO_URL=${ROSA_REPO_URL:-}" \
         -e "ROSA_REPO_BRANCH=${ROSA_REPO_BRANCH:-}" \
+        -e "ROSA_GINKGO_LABEL_FILTER=${ROSA_GINKGO_LABEL_FILTER:-hyperfleet-sanity}
         -e "E2E_SKIP_CLEANUP=${E2E_SKIP_CLEANUP:-}" \
         -e "E2E_SKIP_PLATFORM_API=${E2E_SKIP_PLATFORM_API:-}" \
         -e "E2E_SKIP_HCP=${E2E_SKIP_HCP:-}" \

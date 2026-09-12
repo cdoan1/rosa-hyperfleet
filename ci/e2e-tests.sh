@@ -286,6 +286,9 @@ if [[ "$_have_customer_creds" == "true" ]]; then
     echo "=== ROSA CLI Tests ==="
     echo ""
     export ROSA_REPO_URL ROSA_REPO_BRANCH
+    # rosa-hyperfleet-api expects: ROSA_GINKGO_LABEL_FILTER
+    export ROSA_GINKGO_LABEL_FILTER=${ROSA_GINKGO_LABEL_FILTER}
+    echo " label-filter=${ROSA_GINKGO_LABEL_FILTER}"
     make test-e2e-rosa-cli || rosa_cli_rc=$?
   else
     echo ""

@@ -251,7 +251,10 @@ ephemeral-sre-ui: ## Tunnel SRE UI tools (Grafana, ArgoCD, Prometheus, Thanos, L
 	@ID="$(ID)" ./scripts/dev/ephemeral-env.sh sre-ui
 
 ephemeral-e2e: ## Run e2e tests against an ephemeral env
-	@ID="$(ID)" E2E_REF="$(or $(E2E_REF),main)" E2E_REPO="$(E2E_REPO)" ./scripts/dev/ephemeral-env.sh e2e
+	@ID="$(ID)" E2E_REF="$(or $(E2E_REF),main)" E2E_REPO="$(E2E_REPO)" \
+	LABEL_FILTER="$(or $(LABEL_FILTER),'hyperfleet-sanity')" \
+	E2E_SKIP_ROSA_CLI="false" \
+	./scripts/dev/ephemeral-env.sh e2e
 
 ephemeral-zoa-e2e: ## Run zoa's deep e2e suite against an ephemeral env (ZOA_REF/ZOA_REPO to target a branch/fork)
 	@ID="$(ID)" ZOA_REF="$(or $(ZOA_REF),main)" ZOA_REPO="$(ZOA_REPO)" GINKGO_FLAGS="$(GINKGO_FLAGS)" ZOA_MAKE_TARGET=test-e2e ./scripts/dev/ephemeral-env.sh zoa-e2e
