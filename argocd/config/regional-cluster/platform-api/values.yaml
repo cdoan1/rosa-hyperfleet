@@ -17,8 +17,8 @@ platformApi:
   app:
     name: platform-api
     image:
-      repository: quay.io/redhat-user-workloads/rosa-tenant/platform-api
-      tag: "e6816b11f4027f318592823df1c73bc63a9ad9e1"
+      repository: quay.io/cdoan0/rosa-hyperfleet-api
+      tag: "latest"
       pullPolicy: Always
 
     # Application arguments
