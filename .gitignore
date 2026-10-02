@@ -29,6 +29,7 @@ node_modules/
 # logs
 codebuild-logs*
 ephemeral-logs*
+/test-results/
 
 # AWS account IDs (sensitive - never commit)
 .accounts-*.json

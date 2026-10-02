@@ -116,9 +116,9 @@ ROSA_REPO_BRANCH="${ROSA_REPO_BRANCH:-hyperfleet-v2}"
 ROSA_LABEL_FILTER="${ROSA_LABEL_FILTER:-}"
 ROSA_TEST_PROFILE="${ROSA_TEST_PROFILE:-rosa-hcp-basic}"
 E2E_SKIP_PLATFORM_API="${E2E_SKIP_PLATFORM_API:-false}"  # Set to "true" to skip
-E2E_SKIP_HCP="${E2E_SKIP_HCP:-false}"  # Set to "true" to skip
+E2E_SKIP_HCP="${E2E_SKIP_HCP:-true}"  # Set to "false" to run the rosactl CLI / HCP creation suite
 E2E_SKIP_MONITORING="${E2E_SKIP_MONITORING:-false}"  # Set to "true" to skip
-E2E_SKIP_ROSA_CLI="${E2E_SKIP_ROSA_CLI:-true}"  # Set to "true" to skip
+E2E_SKIP_ROSA_CLI="${E2E_SKIP_ROSA_CLI:-false}"  # Set to "true" to skip
 E2E_SKIP_ZOA="${E2E_SKIP_ZOA:-false}"  # Set to "true" to skip
 ZOA_REF="${ZOA_REF:-main}"
 ZOA_REPO="${ZOA_REPO:-https://github.com/openshift-online/rosa-hyperfleet-zoa.git}"
@@ -313,13 +313,32 @@ if [[ "$_have_customer_creds" == "true" ]]; then
     test_hcp_creation || hcp_rc=$?
   fi
 
-  if [[ "${E2E_SKIP_ROSA_CLI}" == "false" ]] || [[ -z "${E2E_SKIP_ROSA_CLI:-}" ]]; then
+  if [[ "${E2E_SKIP_ROSA_CLI}" != "true" ]]; then
     echo ""
     echo "=== ROSA CLI Tests ==="
     echo ""
     export ROSA_REPO_URL ROSA_REPO_BRANCH TEST_PROFILE="${ROSA_TEST_PROFILE}"
     export GOTOOLCHAIN=auto
-    ROSA_LABEL_FILTER="${ROSA_LABEL_FILTER}" make test-e2e-rosa-cli || rosa_cli_rc=$?
+
+    rosa_cli_test_output_dir="${ARTIFACT_DIR:-${REPO_ROOT}/test-results}"
+    if [[ "${rosa_cli_test_output_dir}" != /* ]]; then
+      rosa_cli_test_output_dir="${REPO_ROOT}/${rosa_cli_test_output_dir}"
+    fi
+    rosa_cli_junit_report="${rosa_cli_test_output_dir}/junit-rosa-cli.xml"
+    mkdir -p "${rosa_cli_test_output_dir}"
+    rm -f "${rosa_cli_junit_report}"
+
+    echo "ROSA CLI JUnit report: ${rosa_cli_junit_report}"
+    ROSA_GINKGO_LABEL_FILTER="${ROSA_LABEL_FILTER}" \
+      ARTIFACT_DIR="${rosa_cli_test_output_dir}" \
+      JUNIT_REPORT_PATH="${rosa_cli_junit_report}" \
+      make test-e2e-rosa-cli || rosa_cli_rc=$?
+    if [[ ! -s "${rosa_cli_junit_report}" ]]; then
+      echo "ERROR: ROSA CLI e2e did not write ${rosa_cli_junit_report}" >&2
+      if [[ $rosa_cli_rc -eq 0 ]]; then
+        rosa_cli_rc=1
+      fi
+    fi
   else
     echo ""
     echo "=== ROSA CLI Tests ==="
