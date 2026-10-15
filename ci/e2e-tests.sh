@@ -341,7 +341,14 @@ if [[ "$_have_customer_creds" == "true" ]]; then
     echo ""
     export ROSA_REPO_URL ROSA_REPO_BRANCH TEST_PROFILE="${ROSA_TEST_PROFILE}"
     export GOTOOLCHAIN=auto
+    
     echo "ROSA_LABEL_FILTER: ${ROSA_LABEL_FILTER}"
+    if [[ $ROSA_LABEL_FILTER == "hyperfleet-sanity" ]]; then
+      echo "Running rosa cli sanity test ..."
+    else
+      echo "Run assorted rosa cli labels"
+    fi
+
     ROSA_LABEL_FILTER="${ROSA_LABEL_FILTER}" make test-e2e-rosa-cli || rosa_cli_rc=$?
   else
     echo ""
